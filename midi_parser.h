@@ -33,6 +33,7 @@ typedef void ( *midi_message_cb ) (
     uint8_t     dat1,
     uint8_t     dat2,
     uint8_t     data_count,
+    int64_t     timestamp,
     void*       user );
 
 typedef enum
@@ -52,6 +53,7 @@ typedef void ( *midi_sysex_cb ) (
 
     midi_sysex_type type,
     uint8_t         dat,
+    int64_t         timestamp,
     void*           user );
 
 /**
@@ -113,7 +115,7 @@ void init_midi_ctx( midi_ctx_t* ctx, midi_message_cb message_cb, midi_sysex_cb s
  * @param ctx           puntatore al contesto per il parsing midi
  * @param byte          dato midi
  */
-void parse_byte ( midi_ctx_t* ctx, uint8_t byte );
+void parse_byte ( midi_ctx_t* ctx, uint8_t byte , int64_t timestamp );
 
 #ifdef __cplusplus
 }

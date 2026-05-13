@@ -81,7 +81,7 @@ void handle_error ( midi_ctx_t* ctx )
     ctx->dat2 = 0;
 }
 
-void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
+void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
     if ( !ctx )
         return;
@@ -96,7 +96,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
     {
         if ( ctx->on_message )
         {
-            ctx->on_message( byte, 0, 0, 0, ctx->user );
+            ctx->on_message( byte, 0, 0, 0, timestamp, ctx->user );
         }
 
         return;
@@ -117,7 +117,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
 
             if ( ctx->on_sysex )
             {
-                ctx->on_sysex( MIDI_SYSEX_START, byte, ctx->user );
+                ctx->on_sysex( MIDI_SYSEX_START, byte, timestamp, ctx->user );
             }
 
             return;
@@ -139,7 +139,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
 
             if ( ctx->on_sysex )
             {
-                ctx->on_sysex( MIDI_SYSEX_END, byte, ctx->user );
+                ctx->on_sysex( MIDI_SYSEX_END, byte, timestamp, ctx->user );
             }
 
             return;
@@ -155,7 +155,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
 
             if ( byte == 0xf6 && ctx->on_message )
             {
-                ctx->on_message( byte, 0, 0, 0, ctx->user );
+                ctx->on_message( byte, 0, 0, 0, timestamp, ctx->user );
             }
 
             return;
@@ -183,7 +183,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
         // System exclusive data byte
         if ( ctx->sysex && ctx->on_sysex )
         {
-            ctx->on_sysex( MIDI_SYSEX_DATA, byte, ctx->user );
+            ctx->on_sysex( MIDI_SYSEX_DATA, byte, timestamp, ctx->user );
             return;
         }
 
@@ -236,7 +236,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte )
 
                 if ( ctx->on_message )
                 {
-                    ctx->on_message( curr_status, ctx->dat1, ctx->dat2, ctx->data_count, ctx->user );
+                    ctx->on_message( curr_status, ctx->dat1, ctx->dat2, ctx->data_count, timestamp, ctx->user );
                 }
 
                 ctx->status = 0;
