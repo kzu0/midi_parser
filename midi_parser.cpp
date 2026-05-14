@@ -1,6 +1,6 @@
 #include "midi_parser.h"
 
-void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, void *user)
+void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
 {
     if ( ctx )
     {
@@ -14,6 +14,7 @@ void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sy
 
         ctx->on_message  = message_cb;
         ctx->on_sysex = sys_cb;
+        ctx->on_error = err_cb;
 
         ctx->user = user;
     }
@@ -65,7 +66,7 @@ uint8_t expected_data_count ( uint8_t status )
     return 0;
 }
 
-void handle_error ( midi_ctx_t* ctx )
+void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
 {
     if ( !ctx )
         return;
@@ -79,6 +80,11 @@ void handle_error ( midi_ctx_t* ctx )
 
     ctx->dat1 = 0;
     ctx->dat2 = 0;
+
+    if ( ctx->on_error )
+    {
+        ctx->on_error( err, timestamp, ctx->user );
+    }
 }
 
 void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
@@ -128,7 +134,8 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         {
             if ( !ctx->sysex )
             {
-                handle_error( ctx );
+                // Chiusura SysEx arrivata prima dello start
+                handle_error( ctx, MIDI_ERR_SYSEX_END_WITHOUT_START, timestamp );
                 return;
             }
 
@@ -210,7 +217,8 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         }
         else
         {
-            handle_error( ctx );
+            // Data byte orfano
+            handle_error( ctx, MIDI_ERR_ORPHAN_DATA_BYTE, timestamp );
             return;
         }
 
@@ -231,7 +239,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
             else
             {
                 // Data count non valido
-                handle_error( ctx );
+                handle_error( ctx, MIDI_ERR_UNEXPECTED_DATA_BYTE, timestamp );
                 return;
             }
 
