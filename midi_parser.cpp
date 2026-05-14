@@ -148,6 +148,11 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         // System Common (0xF1–0xF6): clear running status
         if ( byte >= 0xF1 && byte <= 0xF6 )
         {
+             if ( ctx->sysex && ctx->on_sysex )
+            {
+                ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
+            }
+
             ctx->status         = byte;
             ctx->running_status = 0;
             ctx->data_count     = 0;
@@ -164,6 +169,11 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         // Channel message (0x80–0xEF): set/update running status
         if ( byte >= 0x80 && byte <= 0xEF )
         {
+            if ( ctx->sysex && ctx->on_sysex )
+            {
+                ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
+            }
+
             ctx->status         = byte;
             ctx->running_status = byte;
             ctx->data_count     = 0;

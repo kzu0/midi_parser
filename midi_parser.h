@@ -41,8 +41,9 @@ typedef enum
     MIDI_SYSEX_START,
     MIDI_SYSEX_DATA,
     MIDI_SYSEX_END,
+    MIDI_SYSEX_ABORT
 
-} midi_sysex_type;
+} midi_sysex_status;
 
 /**
  * MIDI sys ex data callboack
@@ -51,10 +52,10 @@ typedef enum
  */
 typedef void ( *midi_sysex_cb ) (
 
-    midi_sysex_type type,
-    uint8_t         dat,
-    int64_t         timestamp,
-    void*           user );
+    midi_sysex_status   type,
+    uint8_t             dat,
+    int64_t             timestamp,
+    void*               user );
 
 /**
  * @brief Contesto per parsing midi
