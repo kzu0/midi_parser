@@ -21,10 +21,12 @@ extern "C" {
 /**
  * MIDI message callboack
  *
- * @param status    Status byte (or 0xF0 for SysEx data bytes).
- * @param dat1      First data byte  (meaningful when data_len >= 1).
- * @param dat2      Second data byte (meaningful when data_len == 2).
- * @param data_len  Number of valid data bytes (0, 1, or 2).
+ * @param status        Status byte (or 0xF0 for SysEx data bytes).
+ * @param dat1          First data byte  (meaningful when data_len >= 1).
+ * @param dat2          Second data byte (meaningful when data_len == 2).
+ * @param data_count    Number of valid data bytes (0, 1, or 2).
+ * @param timestamp     Temporal timestamp.
+ * @param user          User data pointer to pass to callbacks.
  */
 
 typedef void ( *midi_message_cb ) (
@@ -36,6 +38,9 @@ typedef void ( *midi_message_cb ) (
     int64_t     timestamp,
     void*       user );
 
+/**
+ * Sys ex State Machine state
+ */
 typedef enum
 {
     MIDI_SYSEX_START,
@@ -57,6 +62,9 @@ typedef void ( *midi_sysex_cb ) (
     int64_t             timestamp,
     void*               user );
 
+/**
+ * Error codes
+ */
 typedef enum
 {
     // Data byte ricevuto senza status attivo né running status
@@ -76,7 +84,9 @@ typedef enum
 /**
  * MIDI error callboack
  *
- * @param error     Midi error.
+ * @param error     Error code.
+ * @param timestamp Temporal timestamp.
+ * @param user      User data pointer to pass to callbacks.
  */
 typedef void ( *midi_error_cb ) (
 
@@ -89,11 +99,20 @@ typedef void ( *midi_error_cb ) (
  *
  * - status
  *      mantiene l'ultimo status byte ricevuto,
- *      azzerato al completaemtno del messaggio
+ *      azzerato al completamento del messaggio
  *
- * - running status
+ * - running_status
  *      per il parsing dei channel message senza
- *      status byte
+ *      status byte (vedi running status su
+ *      specifica midi)
+ *
+ * - dat1 & dat2
+ *      memorizzano i byte di dato per i messaggi
+ *      con uno o due byte di dato
+ *
+ * - data_count
+ *      accumulatore che tiene conto del numero
+ *      di byte ricevuti
  *
  * - sysex
  *      flag per la ricezione di messaggi sysex
@@ -106,6 +125,11 @@ typedef void ( *midi_error_cb ) (
  *      callback che viene chiamata alla ricezione
  *      di dati sys ex, non bufferizza, streaming
  *      interface
+ *
+ * - on_error
+ *      callback che viene chiamata quando si
+ *      verifica un errore nel parsing di un
+ *      byte midi
  *
  * - user
  *      puntatore da passare alle callback
@@ -132,18 +156,19 @@ typedef struct {
  * Inizializzazione contesto midi parser
  *
  * @param ctx           puntatore al contesto per il parsing midi
- * @param message_cb    callback per i messaggi non sysex
- * @param sys_cb        callback per i dati sysex
- * @param sys_cb        callback per gli errori
- * @param user          puntatore da passare alla callback
+ * @param message_cb    callback per i messaggi (non sysex)
+ * @param sys_cb        callback per i dati sysex (data stream)
+ * @param err_cb        callback per gli errori
+ * @param user          puntatore da passare alle callback
  */
 void init_midi_ctx( midi_ctx_t* ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void* user );
 
 /**
  * Parsing dato midi
  *
- * @param ctx           puntatore al contesto per il parsing midi
- * @param byte          dato midi
+ * @param ctx           Puntatore al contesto per il parsing midi
+ * @param byte          Dato midi
+ * @param timestamp     Temporal timestamp.
  */
 void parse_byte ( midi_ctx_t* ctx, uint8_t byte , int64_t timestamp );
 
