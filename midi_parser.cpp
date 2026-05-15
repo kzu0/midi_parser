@@ -222,7 +222,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
             return;
         }
 
-        // Messaggi conenenti dati
+        // Messaggi contenenti dati
         if ( ( curr_status >= 0x80 && curr_status <= 0xEF ) || ( curr_status >= 0xf1 && curr_status <= 0xf3 ) )
         {
             ctx->data_count++;
@@ -268,25 +268,3 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         }
     }
 }
-
-/*
-uint32_t usbMidi_encodeStream( usbMidi_ctx_t *ctx, const uint8_t *in, uint32_t *out, uint32_t size )
-{
-    if ( !ctx || !in || !out || ( size == 0 ) )
-    {
-        return 0;
-    }
-
-    uint32_t written = 0; // accumulatore dei byte codificati scritti in out
-
-    while ( size-- )
-    {
-        uint8_t byte = *in++;
-
-        parse_byte( byte );
-    }
-
-    return written;
-}
-*/
-
