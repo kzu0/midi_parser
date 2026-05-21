@@ -1,4 +1,4 @@
-#include "midi_parser.h"
+#include "midi_stream.h"
 
 void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
 {
