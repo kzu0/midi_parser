@@ -1,29 +1,9 @@
 #include "midi_stream.h"
 
-void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
-{
-    if ( ctx )
-    {
-        ctx->status = 0;
-        ctx->running_status = 0;
-        ctx->dat1 = 0;
-        ctx->dat2 = 0;
-        ctx->data_count = 0;
-
-        ctx->sysex = false;
-
-        ctx->on_message  = message_cb;
-        ctx->on_sysex = sys_cb;
-        ctx->on_error = err_cb;
-
-        ctx->user = user;
-    }
-}
-
-uint8_t expected_data_count ( uint8_t status )
+static inline uint8_t expected_data_count ( uint8_t status )
 {
     // System real time
-    if (status >= 0xF8)
+    if ( status >= 0xF8 )
     {
         return 0;
     }
@@ -66,7 +46,7 @@ uint8_t expected_data_count ( uint8_t status )
     return 0;
 }
 
-void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
+static void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
 {
     if ( !ctx )
         return;
@@ -77,6 +57,7 @@ void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
     ctx->data_count = 0;
 
     ctx->sysex = false;
+    ctx->sysex_count = 0;
 
     ctx->dat1 = 0;
     ctx->dat2 = 0;
@@ -84,6 +65,89 @@ void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
     if ( ctx->on_error )
     {
         ctx->on_error( err, timestamp, ctx->user );
+    }
+}
+
+static void abort_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
+{
+    if ( !ctx )
+        return;
+
+    if ( ctx->sysex && ctx->on_sysex )
+    {
+        ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
+    }
+
+    ctx->sysex = false;
+    ctx->sysex_count = 0;
+}
+
+static void start_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
+{
+    if ( !ctx )
+        return;
+
+    ctx->sysex = true;
+    ctx->sysex_buffer[0] = 0xF0;
+    ctx->sysex_count = 1;
+
+    if ( ctx->on_sysex )
+    {
+        ctx->on_sysex( MIDI_SYSEX_START, byte, timestamp, ctx->user );
+    }
+}
+
+static void end_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
+{
+    if ( !ctx )
+        return;
+
+    // Chiusura SysEx arrivata prima dello start
+    if ( !ctx->sysex )
+    {
+        handle_error( ctx, MIDI_ERR_SYSEX_END_WITHOUT_START, timestamp );
+        return;
+    }
+
+    // Buffer overflow guard
+    if ( ctx->sysex_count >= SYSEX_BUFFER_SIZE )
+    {
+        handle_error( ctx, MIDI_ERR_SYSEX_BUFFER_OVERFLOW, timestamp );
+        return;
+    }
+
+    ctx->sysex_buffer[ctx->sysex_count++] = 0xF7;
+
+    if ( ctx->on_sysex )
+    {
+        ctx->on_sysex( MIDI_SYSEX_END, byte, timestamp, ctx->user );
+    }
+    else
+    {
+        ctx->on_message( 0xF0, 0, 0, 0, ctx->sysex_count, ctx->sysex_buffer, timestamp, ctx->user );
+    }
+
+    ctx->sysex = false;
+    ctx->sysex_count = 0;
+}
+
+static void handle_sysex_data ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
+{
+    if ( !ctx )
+        return;
+
+    // Buffer overflow guard
+    if ( ctx->sysex_count >= SYSEX_BUFFER_SIZE )
+    {
+        handle_error( ctx, MIDI_ERR_SYSEX_BUFFER_OVERFLOW, timestamp );
+        return;
+    }
+
+    ctx->sysex_buffer[ctx->sysex_count++] = byte;
+
+    if ( ctx->on_sysex )
+    {
+        ctx->on_sysex( MIDI_SYSEX_DATA, byte, timestamp, ctx->user );
     }
 }
 
@@ -102,7 +166,7 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
     {
         if ( ctx->on_message )
         {
-            ctx->on_message( byte, 0, 0, 0, timestamp, ctx->user );
+            ctx->on_message( byte, 0, 0, 0, 0, NULL, timestamp, ctx->user );
         }
 
         return;
@@ -119,12 +183,10 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
             ctx->status          = byte;
             ctx->running_status  = 0;
             ctx->data_count      = 0;
-            ctx->sysex           = true;
 
-            if ( ctx->on_sysex )
-            {
-                ctx->on_sysex( MIDI_SYSEX_START, byte, timestamp, ctx->user );
-            }
+            abort_sysex( ctx, byte, timestamp );
+
+            start_sysex( ctx, byte, timestamp );
 
             return;
         }
@@ -132,22 +194,11 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         // SysEx End (0xF7): terminates an open SysEx stream
         if ( byte == 0xF7 )
         {
-            if ( !ctx->sysex )
-            {
-                // Chiusura SysEx arrivata prima dello start
-                handle_error( ctx, MIDI_ERR_SYSEX_END_WITHOUT_START, timestamp );
-                return;
-            }
-
             ctx->status          = 0;
             ctx->running_status  = 0;
             ctx->data_count      = 0;
-            ctx->sysex           = false;
 
-            if ( ctx->on_sysex )
-            {
-                ctx->on_sysex( MIDI_SYSEX_END, byte, timestamp, ctx->user );
-            }
+            end_sysex( ctx, byte, timestamp );
 
             return;
         }
@@ -155,19 +206,27 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         // System Common (0xF1–0xF6): clear running status
         if ( byte >= 0xF1 && byte <= 0xF6 )
         {
-             if ( ctx->sysex && ctx->on_sysex )
-            {
-                ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
-            }
-
             ctx->status         = byte;
             ctx->running_status = 0;
             ctx->data_count     = 0;
-            ctx->sysex          = false;
 
-            if ( byte == 0xf6 && ctx->on_message )
+            abort_sysex( ctx, byte, timestamp );
+
+            // Tune Request
+            if ( byte == 0xF6 )
             {
-                ctx->on_message( byte, 0, 0, 0, timestamp, ctx->user );
+                ctx->status = 0;
+
+                if ( ctx->on_message )
+                {
+                    ctx->on_message( byte, 0, 0, 0, 0, NULL, timestamp, ctx->user );
+                }
+            }
+
+            // Undefined
+            if ( byte == 0xF4 || byte == 0xF5 )
+            {
+                ctx->status = 0;
             }
 
             return;
@@ -176,15 +235,11 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
         // Channel message (0x80–0xEF): set/update running status
         if ( byte >= 0x80 && byte <= 0xEF )
         {
-            if ( ctx->sysex && ctx->on_sysex )
-            {
-                ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
-            }
-
             ctx->status         = byte;
             ctx->running_status = byte;
             ctx->data_count     = 0;
-            ctx->sysex          = false;
+
+            abort_sysex( ctx, byte, timestamp );
 
             return;
         }
@@ -195,76 +250,95 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
     /* ------------------------------------------------------------------
      * Data byte (0x00–0x7F)
      * ---------------------------------------------------------------- */
+
+    // System exclusive data byte
+    if ( ctx->sysex )
+    {
+        handle_sysex_data( ctx, byte, timestamp );
+        return;
+    }
+
+    // Running status
+    uint8_t curr_status;
+
+    if ( ctx->status >= 0x80 )
+    {
+        curr_status = ctx->status;
+    }
+    else if ( ctx->running_status )
+    {
+        curr_status = ctx->running_status;
+    }
     else
     {
-        // System exclusive data byte
-        if ( ctx->sysex && ctx->on_sysex )
-        {
-            ctx->on_sysex( MIDI_SYSEX_DATA, byte, timestamp, ctx->user );
-            return;
-        }
+        // Data byte orfano
+        handle_error( ctx, MIDI_ERR_ORPHAN_DATA_BYTE, timestamp );
+        return;
+    }
 
-        // Running status
-        uint8_t curr_status;
+    // Messaggi contenenti dati
+    if ( ( curr_status >= 0x80 && curr_status <= 0xEF ) || ( curr_status >= 0xF1 && curr_status <= 0xF3 ) )
+    {
+        ctx->data_count++;
 
-        if ( ctx->status >= 0x80 )
+        // Memorizzo il dato ricevuto
+        if ( ctx->data_count == 1 )
         {
-            curr_status = ctx->status;
+            ctx->dat1 = byte;
         }
-        else if ( ctx->running_status )
+        else if ( ctx->data_count == 2 )
         {
-            curr_status = ctx->running_status;
+            ctx->dat2 = byte;
         }
         else
         {
-            // Data byte orfano
-            handle_error( ctx, MIDI_ERR_ORPHAN_DATA_BYTE, timestamp );
+            // Data count non valido
+            handle_error( ctx, MIDI_ERR_UNEXPECTED_DATA_BYTE, timestamp );
             return;
         }
 
-        // Messaggi contenenti dati
-        if ( ( curr_status >= 0x80 && curr_status <= 0xEF ) || ( curr_status >= 0xf1 && curr_status <= 0xf3 ) )
+        uint32_t data_size = expected_data_count( curr_status );
+
+        // Gestione messaggi completati
+        if ( ctx->data_count == data_size )
         {
-            ctx->data_count++;
+            // byte 0 = curr_status
+            // byte 1 = dat1 (se data_size >= 1)
+            // byte 2 = dat2 (se data_size == 2)
 
-            // Memorizzo il dato ricevuto
-            if ( ctx->data_count == 1 )
+            if ( ctx->on_message )
             {
-                ctx->dat1 = byte;
-            }
-            else if ( ctx->data_count == 2 )
-            {
-                ctx->dat2 = byte;
-            }
-            else
-            {
-                // Data count non valido
-                handle_error( ctx, MIDI_ERR_UNEXPECTED_DATA_BYTE, timestamp );
-                return;
+                ctx->on_message( curr_status, ctx->dat1, ctx->dat2, ctx->data_count, 0, NULL, timestamp, ctx->user );
             }
 
-            uint32_t data_size = expected_data_count( curr_status );
+            ctx->status = 0;
+            ctx->data_count = 0;
 
-            // Gestione messaggi completati
-            if ( ctx->data_count == data_size )
-            {
-                // byte 0 = curr_status
-                // byte 1 = dat1 (se data_size >= 1)
-                // byte 2 = dat2 (se data_size == 2)
+            ctx->dat1 = 0;
+            ctx->dat2 = 0;
 
-                if ( ctx->on_message )
-                {
-                    ctx->on_message( curr_status, ctx->dat1, ctx->dat2, ctx->data_count, timestamp, ctx->user );
-                }
-
-                ctx->status = 0;
-                ctx->data_count = 0;
-
-                ctx->dat1 = 0;
-                ctx->dat2 = 0;
-
-                return;
-            }
+            return;
         }
+    }
+}
+
+void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
+{
+    if ( ctx )
+    {
+        ctx->status = 0;
+        ctx->running_status = 0;
+        ctx->dat1 = 0;
+        ctx->dat2 = 0;
+        ctx->data_count = 0;
+
+        ctx->sysex = false;
+        ctx->sysex_count = 0;
+
+        ctx->on_message  = message_cb;
+        ctx->on_sysex = sys_cb;
+        ctx->on_error = err_cb;
+
+        ctx->user = user;
     }
 }

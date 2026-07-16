@@ -1,11 +1,34 @@
 /*
- * midi_parser.h
+ * midi_stream.h
  *
- *  Created on: 23 apr 2026
+ *  Created on: 23 Apr 2026
  *      Author: kzu0
  *
- *  Descrizione:
- *  Parser MIDI
+ *  Description:
+ *  Lightweight MIDI 1.0 stream parser designed for embedded systems.
+ *
+ *  The parser processes incoming MIDI bytes incrementally, handling
+ *  Channel Messages, System Common Messages, System Real-Time Messages,
+ *  Running Status, and System Exclusive (SysEx) messages according to
+ *  the MIDI specification.
+ *
+ *  SysEx messages can be handled in two different ways:
+ *
+ *    - Streaming mode:
+ *      When a SysEx callback is provided, the parser delivers START,
+ *      DATA, END, and ABORT events as bytes are received, allowing
+ *      applications to process arbitrarily long SysEx messages without
+ *      local buffering.
+ *
+ *    - Buffered mode:
+ *      When no SysEx callback is provided, the parser stores the entire
+ *      SysEx message in an internal buffer and delivers it as a complete
+ *      message through the standard MIDI message callback once the End
+ *      of Exclusive (0xF7) byte is received.
+ *
+ *  The parser is fully event-driven and does not perform dynamic memory
+ *  allocation, making it suitable for resource-constrained embedded
+ *  applications.
  */
 
 #ifndef MIDI_STREAM_H
@@ -18,6 +41,8 @@
 extern "C" {
 #endif
 
+#define SYSEX_BUFFER_SIZE 1024
+
 /**
  * MIDI message callboack
  *
@@ -25,6 +50,8 @@ extern "C" {
  * @param dat1          First data byte  (meaningful when data_len >= 1).
  * @param dat2          Second data byte (meaningful when data_len == 2).
  * @param data_count    Number of valid data bytes (0, 1, or 2).
+ * @param sysex_count   Number of sysex bytes
+ * @param sysex_buffer  Pointer to sysex buffer
  * @param timestamp     Temporal timestamp.
  * @param user          User data pointer to pass to callbacks.
  */
@@ -35,6 +62,8 @@ typedef void ( *midi_message_cb ) (
     uint8_t     dat1,
     uint8_t     dat2,
     uint8_t     data_count,
+    uint32_t    sysex_count,
+    uint8_t*    sysex_buffer,
     int64_t     timestamp,
     void*       user );
 
@@ -75,6 +104,9 @@ typedef enum
 
     // 0xF7 ricevuto senza un SysEx aperto
     MIDI_ERR_SYSEX_END_WITHOUT_START,
+
+    // Buffer Overflow
+    MIDI_ERR_SYSEX_BUFFER_OVERFLOW,
 
     // Errore non classificato
     MIDI_ERR_UNKNOWN = 0xFF
@@ -117,14 +149,22 @@ typedef void ( *midi_error_cb ) (
  * - sysex
  *      flag per la ricezione di messaggi sysex
  *
+ * - sysex_count
+ *      accumulatore dei dati sysex
+ *
+ * - sysex_buffer
+ *      buffer per messaggi sysex
+ *
  * - on_message
  *      callback che viene chiamata alla ricezione
- *      di un messaggio midi (non sys ex)
+ *      di un messaggio midi
  *
  * - on_sysex
  *      callback che viene chiamata alla ricezione
- *      di dati sys ex, non bufferizza, streaming
- *      interface
+ *      di dati sysex, non bufferizza, streaming
+ *      interface. Se è NULL, i messaggi sysex
+ *      vengono elaborati internamente e riportati
+ *      da on_message
  *
  * - on_error
  *      callback che viene chiamata quando si
@@ -143,6 +183,8 @@ typedef struct {
     uint8_t         data_count;
 
     bool            sysex;
+    uint32_t        sysex_count;
+    uint8_t         sysex_buffer[SYSEX_BUFFER_SIZE];
 
     midi_message_cb on_message;
     midi_sysex_cb   on_sysex;
@@ -156,8 +198,8 @@ typedef struct {
  * Inizializzazione contesto midi parser
  *
  * @param ctx           puntatore al contesto per il parsing midi
- * @param message_cb    callback per i messaggi (non sysex)
- * @param sys_cb        callback per i dati sysex (data stream)
+ * @param message_cb    callback per i messaggi
+ * @param sys_cb        callback per i dati sysex (data stream, se NULL i messaggi sysex passano per message_cb)
  * @param err_cb        callback per gli errori
  * @param user          puntatore da passare alle callback
  */
