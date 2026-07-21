@@ -203,7 +203,7 @@ typedef struct {
  * @param err_cb        callback per gli errori
  * @param user          puntatore da passare alle callback
  */
-void init_midi_ctx( midi_ctx_t* ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void* user );
+void midi_init_ctx( midi_ctx_t* ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void* user );
 
 /**
  * Parsing dato midi
@@ -212,7 +212,7 @@ void init_midi_ctx( midi_ctx_t* ctx, midi_message_cb message_cb, midi_sysex_cb s
  * @param byte          Dato midi
  * @param timestamp     Temporal timestamp.
  */
-void parse_byte ( midi_ctx_t* ctx, uint8_t byte , int64_t timestamp );
+void midi_parse_byte ( midi_ctx_t* ctx, uint8_t byte , int64_t timestamp );
 
 #ifdef __cplusplus
 }

@@ -1,4 +1,5 @@
 #include "midi_stream.h"
+#include <assert.h>
 
 static inline uint8_t expected_data_count ( uint8_t status )
 {
@@ -48,9 +49,6 @@ static inline uint8_t expected_data_count ( uint8_t status )
 
 static void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
-
     ctx->status = 0;
 
     ctx->running_status = 0;
@@ -70,9 +68,6 @@ static void handle_error ( midi_ctx_t* ctx, midi_error_t err, int64_t timestamp 
 
 static void abort_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
-
     if ( ctx->sysex && ctx->on_sysex )
     {
         ctx->on_sysex( MIDI_SYSEX_ABORT, byte, timestamp, ctx->user );
@@ -84,9 +79,6 @@ static void abort_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 
 static void start_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
-
     ctx->sysex = true;
     ctx->sysex_buffer[0] = 0xF0;
     ctx->sysex_count = 1;
@@ -99,9 +91,6 @@ static void start_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 
 static void end_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
-
     // Chiusura SysEx arrivata prima dello start
     if ( !ctx->sysex )
     {
@@ -133,9 +122,6 @@ static void end_sysex ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 
 static void handle_sysex_data ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
-
     // Buffer overflow guard
     if ( ctx->sysex_count >= SYSEX_BUFFER_SIZE )
     {
@@ -151,10 +137,9 @@ static void handle_sysex_data ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp
     }
 }
 
-void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
+void midi_parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
 {
-    if ( !ctx )
-        return;
+    assert( ctx != NULL );
 
     /* ------------------------------------------------------------------
      * System Real Time (0xF8–0xFF)
@@ -322,23 +307,22 @@ void parse_byte ( midi_ctx_t* ctx, uint8_t byte, int64_t timestamp )
     }
 }
 
-void init_midi_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
+void midi_init_ctx(midi_ctx_t *ctx, midi_message_cb message_cb, midi_sysex_cb sys_cb, midi_error_cb err_cb, void *user)
 {
-    if ( ctx )
-    {
-        ctx->status = 0;
-        ctx->running_status = 0;
-        ctx->dat1 = 0;
-        ctx->dat2 = 0;
-        ctx->data_count = 0;
+    assert( ctx != NULL );
 
-        ctx->sysex = false;
-        ctx->sysex_count = 0;
+    ctx->status = 0;
+    ctx->running_status = 0;
+    ctx->dat1 = 0;
+    ctx->dat2 = 0;
+    ctx->data_count = 0;
 
-        ctx->on_message  = message_cb;
-        ctx->on_sysex = sys_cb;
-        ctx->on_error = err_cb;
+    ctx->sysex = false;
+    ctx->sysex_count = 0;
 
-        ctx->user = user;
-    }
+    ctx->on_message  = message_cb;
+    ctx->on_sysex = sys_cb;
+    ctx->on_error = err_cb;
+
+    ctx->user = user;
 }
