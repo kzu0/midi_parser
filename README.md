@@ -6,17 +6,6 @@ The parser processes incoming MIDI bytes incrementally, supporting **Channel Mes
 
 The library performs **no dynamic memory allocation**, making it suitable for resource-constrained microcontrollers and real-time applications.
 
-## Features
-
-- MIDI 1.0 compliant stream parser
-- Incremental byte-by-byte parsing
-- Full Running Status support
-- Correct handling of System Real-Time messages
-- System Common message support
-- Event-driven callback interface
-- No dynamic memory allocation
-- Suitable for bare-metal and RTOS-based embedded systems
-
 ## SysEx Handling
 
 The parser provides **two different SysEx processing modes**, allowing applications to choose the most appropriate approach.
@@ -34,6 +23,37 @@ The application receives the following events:
 
 This mode allows processing of **arbitrarily large SysEx messages** without allocating large buffers, making it ideal for memory-constrained systems.
 
+```c
+static void on_message( uint8_t status, uint8_t dat1, uint8_t dat2,
+                         uint8_t data_count, uint32_t sysex_count,
+                         uint8_t* sysex_buffer, int64_t timestamp, void* user )
+{
+    // Handle channel message
+}
+
+static void on_sysex( midi_sysex_status_t t, uint8_t d, int64_t timestamp, void* u )
+{
+    // Handle sysex stream
+}
+
+int main( void )
+{
+    midi_ctx_t ctx;
+
+    midi_init_ctx( &ctx, on_message, on_sysex, NULL, NULL );
+
+    uint8_t byte;
+    int64_t timestamp;
+
+    while ( read_next_midi_byte( &byte, &timestamp ) )
+    {
+        midi_parse_byte( &ctx, byte, timestamp );
+    }
+
+    return 0;
+}
+```
+
 ### Buffered Mode
 
 If no **SysEx callback** is provided, the parser buffers the entire SysEx message internally.
@@ -42,22 +62,36 @@ When the terminating `0xF7` is received, the complete SysEx packet is delivered 
 
 This mode is convenient for applications that prefer receiving complete SysEx packets instead of processing them byte-by-byte.
 
-## Error Handling
+```c
+static void on_message( uint8_t status, uint8_t dat1, uint8_t dat2,
+                         uint8_t data_count, uint32_t sysex_count,
+                         uint8_t* sysex_buffer, int64_t timestamp, void* user )
+{
+    if ( status == 0xF0 )
+    {
+        // Handle sysex message
+    }
+    else
+    {
+        // Handle channel message
+    }
+}
 
-The parser detects several malformed MIDI conditions, including:
+int main( void )
+{
+    midi_ctx_t ctx;
 
-- Orphan data bytes
-- Unexpected data bytes
-- SysEx end without a corresponding start
-- SysEx buffer overflow
+    // Pass NULL as sysex callback to use buffered mode
+    midi_init_ctx( &ctx, on_message, NULL, NULL, NULL );
 
-Errors are reported through an optional callback while the parser automatically resets its internal state to resume parsing subsequent messages.
+    uint8_t byte;
+    int64_t timestamp;
 
-## Design Goals
+    while ( read_next_midi_byte( &byte, &timestamp ) )
+    {
+        midi_parse_byte( &ctx, byte, timestamp );
+    }
 
-- Simple API
-- Small memory footprint
-- Deterministic execution
-- No heap usage
-- Easy integration into embedded firmware
-- Fully event-driven architecture
+    return 0;
+}
+```
