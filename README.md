@@ -6,7 +6,7 @@ The parser processes incoming MIDI bytes incrementally, supporting **Channel Mes
 
 The library performs **no dynamic memory allocation**, making it suitable for resource-constrained microcontrollers and real-time applications.
 
-## SysEx Handling
+## Usage
 
 The parser provides **two different SysEx processing modes**, allowing applications to choose the most appropriate approach.
 
